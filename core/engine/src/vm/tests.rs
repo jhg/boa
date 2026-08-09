@@ -376,6 +376,61 @@ fn recursion_runtime_limit() {
 }
 
 #[test]
+fn interrupt_handle_stops_execution() {
+    let context = &mut Context::default();
+    let handle = context.interrupt_handle();
+
+    context
+        .register_global_callable(
+            js_string!("interrupt_now"),
+            0,
+            // SAFETY: the closure only captures an `InterruptHandle`, which contains no `Gc<T>`
+            // and therefore needs no tracing.
+            unsafe {
+                NativeFunction::from_closure({
+                    let handle = handle.clone();
+                    move |_, _, _| {
+                        handle.interrupt();
+                        Ok(JsValue::undefined())
+                    }
+                })
+            },
+        )
+        .expect("Could not register function");
+
+    // The interrupt fires from inside a `try` block, followed by more work in both the `try`
+    // and `finally` blocks; none of it should run once the flag is set, and the resulting
+    // error must not be observable by `catch` (the same guarantee `RuntimeLimitError` has).
+    let result = context.eval(Source::from_bytes(indoc! {r#"
+        var reached = "not reached";
+        try {
+            interrupt_now();
+            reached = "try body ran to completion";
+        } catch {
+            reached = "caught";
+        }
+        reached;
+    "#}));
+
+    assert!(result.is_err());
+    assert_eq!(
+        context
+            .global_object()
+            .get(js_string!("reached"), context)
+            .unwrap(),
+        js_string!("not reached").into()
+    );
+
+    // Interrupting doesn't corrupt the context; it can keep running other code afterwards
+    // once the flag is cleared.
+    handle.reset();
+    assert_eq!(
+        context.eval(Source::from_bytes("1 + 41")),
+        Ok(JsValue::new(42))
+    );
+}
+
+#[test]
 fn arguments_object_constructor_valid_index() {
     run_test_actions([TestAction::assert_eq(
         indoc! {r#"

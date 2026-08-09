@@ -366,6 +366,11 @@ pub enum EngineError {
     #[error("NoInstructionsRemainError: instruction budget was exhausted")]
     NoInstructionsRemain,
 
+    /// Error thrown when execution is interrupted through an
+    /// [`InterruptHandle`](crate::vm::InterruptHandle).
+    #[error("InterruptedError: execution was interrupted")]
+    Interrupted,
+
     /// Error thrown when a runtime limit is exceeded.
     #[error("RuntimeLimitError: {0}")]
     RuntimeLimit(#[from] RuntimeLimitError),
@@ -385,6 +390,7 @@ impl EngineError {
         match self {
             #[cfg(feature = "fuzz")]
             EngineError::NoInstructionsRemain => ErasedEngineError::NoInstructionsRemain,
+            EngineError::Interrupted => ErasedEngineError::Interrupted,
             EngineError::RuntimeLimit(err) => ErasedEngineError::RuntimeLimit(err),
             EngineError::Panic(err) => ErasedEngineError::Panic(ErasedPanicError {
                 message: err.message,
@@ -1582,6 +1588,11 @@ pub enum ErasedEngineError {
     #[cfg(feature = "fuzz")]
     #[error("NoInstructionsRemainError: instruction budget was exhausted")]
     NoInstructionsRemain,
+
+    /// Error thrown when execution is interrupted through an
+    /// [`InterruptHandle`](crate::vm::InterruptHandle).
+    #[error("InterruptedError: execution was interrupted")]
+    Interrupted,
 
     /// Error thrown when a runtime limit is exceeded.
     #[error("RuntimeLimitError: {0}")]

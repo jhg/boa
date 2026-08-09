@@ -18,7 +18,7 @@ use timezone_provider::experimental_tzif::ZeroCompiledTzdbProvider;
 use crate::job::Job;
 use crate::js_error;
 use crate::module::DynModuleLoader;
-use crate::vm::{CodeBlock, RuntimeLimits, create_function_object_fast};
+use crate::vm::{CodeBlock, InterruptHandle, RuntimeLimits, create_function_object_fast};
 use crate::{
     HostDefined, JsNativeError, JsResult, JsString, JsValue, Source, builtins,
     class::{Class, ClassBuilder},
@@ -593,6 +593,16 @@ impl Context {
     #[inline]
     pub fn runtime_limits_mut(&mut self) -> &mut RuntimeLimits {
         &mut self.vm.runtime_limits
+    }
+
+    /// Gets a handle that can be used to interrupt this context's execution from another
+    /// thread.
+    ///
+    /// See [`InterruptHandle`] for more information.
+    #[inline]
+    #[must_use]
+    pub fn interrupt_handle(&self) -> InterruptHandle {
+        self.vm.interrupt_handle.clone()
     }
 
     /// Returns `true` if this context can be suspended by an `Atomics.wait` call.

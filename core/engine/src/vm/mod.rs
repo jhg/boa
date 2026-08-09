@@ -8,7 +8,7 @@ use crate::{
     Context, JsError, JsExpect, JsNativeError, JsObject, JsResult, JsString, JsValue, Module,
     builtins::promise::{PromiseCapability, ResolvingFunctions},
     environments::EnvironmentStack,
-    error::RuntimeLimitError,
+    error::{EngineError, RuntimeLimitError},
     object::JsFunction,
     realm::Realm,
     script::Script,
@@ -34,6 +34,7 @@ pub(crate) use {
     inline_cache::InlineCache,
 };
 
+pub use interrupt::InterruptHandle;
 pub use runtime_limits::RuntimeLimits;
 pub use {
     call_frame::{CallFrame, GeneratorResumeKind},
@@ -47,6 +48,7 @@ mod call_frame;
 mod code_block;
 mod completion_record;
 mod inline_cache;
+mod interrupt;
 mod runtime_limits;
 
 pub(crate) mod opcode;
@@ -82,6 +84,9 @@ pub struct Vm {
     /// This eliminates the conversion between [`crate::JsNativeError`] and [`crate::JsValue`] if not needed.
     pub(crate) pending_exception: Option<JsError>,
     pub(crate) runtime_limits: RuntimeLimits,
+
+    /// Checked on every instruction dispatch; see [`InterruptHandle`].
+    pub(crate) interrupt_handle: InterruptHandle,
 
     /// This is used to assign a native (rust) function as the active function,
     /// because we don't push a frame for them.
@@ -418,6 +423,7 @@ impl Vm {
             return_value: JsValue::undefined(),
             pending_exception: None,
             runtime_limits: RuntimeLimits::default(),
+            interrupt_handle: InterruptHandle::default(),
             native_active_function: None,
             host_call_depth: 0,
             shadow_stack: ShadowStack::default(),
@@ -778,6 +784,10 @@ impl Context {
     where
         F: FnOnce(&mut Context, Opcode) -> ControlFlow<CompletionRecord>,
     {
+        if self.vm.interrupt_handle.is_interrupted() {
+            return self.handle_error(EngineError::Interrupted.into());
+        }
+
         #[cfg(feature = "fuzz")]
         {
             use crate::error::EngineError;
