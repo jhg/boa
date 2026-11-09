@@ -451,6 +451,7 @@ dependencies = [
  "time",
  "timezone_provider",
  "tinystr",
+ "track_alloc",
  "web-time",
  "writeable",
  "xsum",
@@ -4264,6 +4265,10 @@ dependencies = [
  "thread_local",
  "tracing-core",
 ]
+
+[[package]]
+name = "track_alloc"
+version = "0.1.0"
 
 [[package]]
 name = "try-lock"

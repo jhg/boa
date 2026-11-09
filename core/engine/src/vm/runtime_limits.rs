@@ -12,6 +12,9 @@ pub struct RuntimeLimits {
 
     /// Max function recursion limit
     recursion: usize,
+
+    /// Max bytes allocated on the current thread before an error is thrown.
+    max_allocated_bytes: usize,
 }
 
 impl Default for RuntimeLimits {
@@ -22,6 +25,7 @@ impl Default for RuntimeLimits {
             recursion: 512,
             backtrace_limit: 50,
             stack_size: 1024 * 10,
+            max_allocated_bytes: usize::MAX,
         }
     }
 }
@@ -93,5 +97,36 @@ impl RuntimeLimits {
     #[inline]
     pub fn set_recursion_limit(&mut self, value: usize) {
         self.recursion = value;
+    }
+
+    /// Get the max allocated bytes limit.
+    ///
+    /// This is checked against the bytes currently allocated on the thread running this
+    /// [`Context`](crate::Context), as reported by [`track_alloc::allocated_bytes`] - which
+    /// counts everything allocated on that thread, not just bytes reachable from this
+    /// `Context`. This limit only has an effect if a [`track_alloc::TrackingAllocator`] was
+    /// installed as the process's `#[global_allocator]`; otherwise this limit is never reached.
+    ///
+    /// The limit value [`usize::MAX`] means that there is no limit.
+    #[inline]
+    #[must_use]
+    pub const fn max_allocated_bytes(&self) -> usize {
+        self.max_allocated_bytes
+    }
+
+    /// Set the max allocated bytes limit.
+    ///
+    /// See [`RuntimeLimits::max_allocated_bytes`] for the caveats of this limit.
+    ///
+    /// Setting the limit to [`usize::MAX`] means that there is no limit.
+    #[inline]
+    pub fn set_max_allocated_bytes(&mut self, value: usize) {
+        self.max_allocated_bytes = value;
+    }
+
+    /// Disable the max allocated bytes limit.
+    #[inline]
+    pub fn disable_max_allocated_bytes_limit(&mut self) {
+        self.max_allocated_bytes = usize::MAX;
     }
 }

@@ -1038,6 +1038,10 @@ impl Context {
         if self.vm.runtime_limits.stack_size_limit() <= self.vm.stack.stack.len() {
             return Err(RuntimeLimitError::StackSize.into());
         }
+        // Must throw if the current thread has allocated more than the defined maximum.
+        if track_alloc::allocated_bytes() > self.vm.runtime_limits.max_allocated_bytes() {
+            return Err(RuntimeLimitError::Memory.into());
+        }
 
         Ok(())
     }

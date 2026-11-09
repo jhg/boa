@@ -320,6 +320,16 @@ recursion, a stack size of 1024, and practically unlimited loop iterations. Thes
 at call boundaries and inside loops. Exceeding any limit throws a non-catchable
 `RuntimeLimitError` that bypasses all exception handlers.
 
+`RuntimeLimits` can also cap the number of bytes allocated on the thread running a `Context`,
+via `max_allocated_bytes`, checked at the same call boundaries and loops. This only has an
+effect if the embedder installs a [`track_alloc::TrackingAllocator`] as the process's
+`#[global_allocator]`; otherwise the check always reads zero and never fires. Unlike
+`boa_gc`'s own allocation threshold (which only drives when to collect, and only "sees"
+`Gc<T>` allocations), `track_alloc` counts everything allocated on that thread - including
+`JsString` buffers and `Vec` growth that `boa_gc` can't see on its own.
+
+[`track_alloc::TrackingAllocator`]: https://docs.rs/track_alloc
+
 ## Understanding the trace output
 
 Once set up you can try some simple javascript in your test file. For example:

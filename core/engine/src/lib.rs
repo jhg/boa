@@ -114,6 +114,14 @@ pub use spanned_source_text::SpannedSourceText;
 #[cfg(test)]
 mod tests;
 
+// Installs a real `TrackingAllocator` for `boa_engine`'s own test binary, so tests that exercise
+// `RuntimeLimits::max_allocated_bytes` observe genuine memory usage instead of a value that's
+// always zero.
+#[cfg(test)]
+#[global_allocator]
+static TEST_ALLOCATOR: track_alloc::TrackingAllocator =
+    track_alloc::TrackingAllocator(std::alloc::System);
+
 /// A convenience module that re-exports the most commonly-used Boa APIs
 pub mod prelude {
     pub use crate::{

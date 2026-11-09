@@ -50,6 +50,7 @@ boa_wintertc = { version = "~1.0.0-dev", path = "core/wintertc" }
 # Utility Repo Crates
 tag_ptr = { version = "~0.1.0", path = "utils/tag_ptr" }
 small_btree = { version = "~0.1.0", path = "utils/small_btree" }
+track_alloc = { version = "~0.1.0", path = "utils/track_alloc" }
 
 # Shared deps
 arbitrary = "1"

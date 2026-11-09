@@ -376,6 +376,58 @@ fn recursion_runtime_limit() {
 }
 
 #[test]
+fn memory_runtime_limit() {
+    run_test_actions([
+        TestAction::assert_eq(
+            indoc! {r#"
+                let r1 = (() => {
+                    let s = "";
+                    for (let i = 0; i < 10; ++i) { s += "x"; }
+                    return s.length;
+                })();
+                r1;
+            "#},
+            JsValue::new(10),
+        ),
+        TestAction::inspect_context(|context| {
+            // Relative to a baseline taken right now, so this isn't affected by whatever else
+            // this test's thread happened to allocate before this point.
+            let baseline = track_alloc::allocated_bytes();
+            context
+                .runtime_limits_mut()
+                .set_max_allocated_bytes(baseline + 4096);
+        }),
+        TestAction::assert_runtime_limit_error(
+            // Each iteration's live string buffer grows with it, so this crosses the 4096-byte
+            // budget well before the loop would otherwise finish.
+            indoc! {r#"
+                (() => {
+                    let s = "";
+                    for (let i = 0; i < 1_000_000; ++i) { s += "x"; }
+                })();
+            "#},
+            RuntimeLimitError::Memory,
+        ),
+        TestAction::inspect_context(|context| {
+            context
+                .runtime_limits_mut()
+                .disable_max_allocated_bytes_limit();
+        }),
+        TestAction::assert_eq(
+            indoc! {r#"
+                let r2 = (() => {
+                    let s = "";
+                    for (let i = 0; i < 10; ++i) { s += "x"; }
+                    return s.length;
+                })();
+                r2;
+            "#},
+            JsValue::new(10),
+        ),
+    ]);
+}
+
+#[test]
 fn interrupt_handle_stops_execution() {
     let context = &mut Context::default();
     let handle = context.interrupt_handle();

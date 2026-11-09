@@ -314,6 +314,9 @@ pub enum RuntimeLimitError {
     /// Error for reaching the maximum stack size
     #[error("reached the maximum stack size on this execution")]
     StackSize,
+    /// Error for reaching the maximum number of bytes allocated on the current thread.
+    #[error("reached the maximum number of bytes allocated on this thread")]
+    Memory,
 }
 
 /// Internal panic error.
