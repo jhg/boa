@@ -1,10 +1,9 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
 use std::task::{Context, Poll};
 
-use crate::Scope;
+use crate::{Counters, Scope};
 
 /// Wraps `fut` so that every byte it allocates or frees, on every `poll`, is attributed to
 /// `scope` - regardless of which OS thread actually executes that particular `poll` call.
@@ -18,23 +17,23 @@ use crate::Scope;
 /// This works with any executor: it only depends on [`Future`]/[`Context`]/[`Poll`] from
 /// `core`, not on any particular async runtime.
 #[must_use]
-pub fn track<F: Future>(scope: Arc<AtomicUsize>, fut: F) -> Tracked<F> {
+pub fn track<F: Future>(scope: Arc<Counters>, fut: F) -> Tracked<F> {
     Tracked { inner: fut, scope }
 }
 
 /// A [`Future`] that attributes every byte its inner future allocates or frees, on every
-/// `poll`, to a [`Scope`] over the given counter. See [`track`].
+/// `poll`, to a [`Scope`] over the given counters. See [`track`].
 #[derive(Debug)]
 pub struct Tracked<F> {
     inner: F,
-    scope: Arc<AtomicUsize>,
+    scope: Arc<Counters>,
 }
 
 impl<F: Future> Future for Tracked<F> {
     type Output = F::Output;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        // `scope` is `Arc<AtomicUsize>`, which is always `Unpin`, so reading it through `Pin`'s
+        // `scope` is `Arc<Counters>`, which is always `Unpin`, so reading it through `Pin`'s
         // unconditional `Deref` is sound regardless of whether `F` (and therefore `Self`) is.
         // The borrow ends once `Scope::enter` returns (it clones what it needs), so it doesn't
         // conflict with projecting into `self` right below.
@@ -51,7 +50,6 @@ impl<F: Future> Future for Tracked<F> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::Ordering;
     use std::task::{RawWaker, RawWakerVTable, Waker};
 
     fn dummy_waker() -> Waker {
@@ -77,7 +75,7 @@ mod tests {
     // memory that's already been freed rather than what was live mid-flight).
     fn wait_for(gate: Arc<std::sync::atomic::AtomicBool>) -> impl Future<Output = ()> {
         std::future::poll_fn(move |cx| {
-            if gate.load(Ordering::Relaxed) {
+            if gate.load(std::sync::atomic::Ordering::Relaxed) {
                 Poll::Ready(())
             } else {
                 cx.waker().wake_by_ref();
@@ -99,9 +97,14 @@ mod tests {
 
     #[test]
     fn attributes_allocations_across_polls_on_different_threads() {
+        // See `TEST_SERIAL`'s doc comment: every test in this crate holds it, so that tests
+        // measuring the process-wide global counter elsewhere aren't disturbed by this one's
+        // allocations running concurrently.
+        let _lock = crate::test_lock();
+
         let gate1 = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let gate2 = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let scope = Arc::new(AtomicUsize::new(0));
+        let scope = Arc::new(Counters::new());
         let mut tracked = Box::pin(track(
             scope.clone(),
             allocates_twice(gate1.clone(), gate2.clone()),
@@ -112,7 +115,7 @@ mod tests {
 
         // First poll, on this thread: allocates `first` and returns Pending.
         assert!(tracked.as_mut().poll(&mut cx).is_pending());
-        assert!(scope.load(Ordering::Relaxed) >= 10);
+        assert!(scope.snapshot().live >= 10);
 
         // Second poll, on a *different* OS thread - simulating a work-stealing executor moving
         // the task between polls. The `Tracked` wrapper re-enters its `Scope` on every poll
@@ -120,14 +123,14 @@ mod tests {
         // whatever default counter this new thread would otherwise use. `first` is still alive
         // here (held across the `.await`), and this poll allocates `second` too, so both are
         // genuinely live together once this returns.
-        gate1.store(true, Ordering::Relaxed);
+        gate1.store(true, std::sync::atomic::Ordering::Relaxed);
         let scope_for_thread = scope.clone();
         tracked = std::thread::spawn(move || {
             let waker = dummy_waker();
             let mut cx = Context::from_waker(&waker);
             assert!(tracked.as_mut().poll(&mut cx).is_pending());
             assert_eq!(
-                scope_for_thread.load(Ordering::Relaxed),
+                scope_for_thread.snapshot().live,
                 30,
                 "first + second, both still live"
             );
@@ -138,17 +141,17 @@ mod tests {
 
         // Third poll, back on this thread: completes and returns, dropping both locals as part
         // of that same call.
-        gate2.store(true, Ordering::Relaxed);
+        gate2.store(true, std::sync::atomic::Ordering::Relaxed);
         let result = match tracked.as_mut().poll(&mut cx) {
             Poll::Ready(value) => value,
             Poll::Pending => panic!("gate2 was set; must be ready"),
         };
 
         assert_eq!(result, 30);
-        assert_eq!(
-            scope.load(Ordering::Relaxed),
-            0,
-            "both freed once the task completed"
-        );
+        let snapshot = scope.snapshot();
+        assert_eq!(snapshot.live, 0, "both freed once the task completed");
+        assert_eq!(snapshot.allocations, 2);
+        assert_eq!(snapshot.deallocations, 2);
+        assert_eq!(snapshot.total_allocated, 30);
     }
 }

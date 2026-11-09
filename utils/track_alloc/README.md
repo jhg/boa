@@ -13,6 +13,8 @@ global total. `track_alloc` adds two things on top of that:
   counter across every `poll`, even if a work-stealing executor (like `tokio`'s default runtime)
   moves it between OS threads between polls. This is runtime-agnostic - it only depends on
   [`Future`] from `core`, not on any particular executor.
+- **Full statistics in every mode**: peak usage, total ever allocated, and operation counts -
+  not just the live total - for the global counter, each thread's own default, and any `Scope`.
 
 It never enforces a limit by refusing allocations. Rust's standard collections treat a null
 allocation as fatal and abort the whole process, so an allocator that refuses is unsafe to use
@@ -83,17 +85,16 @@ held - restoring whatever was current before once it's dropped. Scopes nest corr
 ```rust
 use std::alloc::System;
 use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
-use track_alloc::{Scope, TrackingAllocator};
+use track_alloc::{Counters, Scope, TrackingAllocator};
 
 #[global_allocator]
 static ALLOCATOR: TrackingAllocator<System> = TrackingAllocator(System);
 
-let budget = Arc::new(AtomicUsize::new(0));
+let budget = Arc::new(Counters::new());
 {
     let _scope = Scope::enter(&budget);
     let v: Vec<u8> = Vec::with_capacity(1024);
-    assert_eq!(budget.load(std::sync::atomic::Ordering::Relaxed), 1024);
+    assert_eq!(budget.snapshot().live, 1024);
 }
 ```
 
@@ -102,18 +103,47 @@ even when they land on different OS threads:
 
 ```rust
 use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
-use track_alloc::track;
+use track_alloc::{Counters, track};
 
 async fn do_work() {
     let _buf: Vec<u8> = Vec::with_capacity(4096);
     // ... some `.await` point that a work-stealing executor could resume on another thread ...
 }
 
-let budget = Arc::new(AtomicUsize::new(0));
+let budget = Arc::new(Counters::new());
 let tracked = track(budget.clone(), do_work());
 // Run `tracked` on any executor; `budget` reflects its allocations regardless of which
 // worker thread actually polls it.
+```
+
+## Full statistics: peak usage, totals, operation counts
+
+Every counter - the per-thread default, the global, or a `Scope`'s target - tracks more than
+just the current live total. [`stats`]/[`global_stats`] return a [`Stats`] snapshot with the
+historical peak, the running total ever allocated, and operation counts - the same numbers
+[`cap`][cap]'s `stats` feature and [`stats_alloc`][stats-alloc] offer, available here in every
+mode (global, per-thread, per-scope, per-task) rather than only for one global counter:
+
+```rust
+use std::alloc::System;
+use track_alloc::{TrackingAllocator, stats};
+
+#[global_allocator]
+static ALLOCATOR: TrackingAllocator<System> = TrackingAllocator(System);
+
+// Like `allocated_bytes`, these numbers aren't guaranteed to start at `0` - see the per-thread
+// tracking section above - so take a baseline first and look at what changed.
+let before = stats();
+let v: Vec<u8> = Vec::with_capacity(1024);
+let during = stats();
+assert_eq!(during.live.wrapping_sub(before.live), 1024);
+assert_eq!(during.peak.wrapping_sub(before.peak), 1024);
+assert_eq!(during.total_allocated.wrapping_sub(before.total_allocated), 1024);
+assert_eq!(during.allocations.wrapping_sub(before.allocations), 1);
+drop(v);
+let after = stats();
+assert_eq!(after.live, before.live, "back down to the baseline");
+assert_eq!(after.peak, during.peak, "peak doesn't go back down");
 ```
 
 [global-alloc]: https://doc.rust-lang.org/std/alloc/trait.GlobalAlloc.html
