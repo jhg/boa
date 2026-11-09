@@ -1,16 +1,21 @@
 [package]
 name = "track_alloc"
-keywords = ["allocator", "memory"]
-categories = ["memory-management"]
-readme = "../../README.md"
-description = "Utility library that provides a GlobalAlloc wrapper tracking bytes allocated on the calling thread"
+keywords = ["allocator", "memory", "async", "tracking"]
+categories = ["memory-management", "asynchronous"]
+readme = "README.md"
+description = "A GlobalAlloc wrapper that tracks memory usage per thread, per async task, or for the whole process, without ever refusing an allocation"
 version = "0.1.0"
-edition.workspace = true
-authors.workspace = true
-license.workspace = true
-repository.workspace = true
-rust-version.workspace = true
+edition = "2024"
+rust-version = "1.91.0"
+authors = ["jesushdez@protonmail.com"]
+license = "MIT OR Apache-2.0"
 
+# This crate currently lives inside Boa's own workspace (https://github.com/boa-dev/boa) but is
+# standalone and unrelated to it; it's meant to be extracted into its own repository. Until
+# then, `edition`/`rust-version` above are pinned to literal values (rather than
+# `*.workspace = true`) so this file stays correct either way. `[lints] workspace = true` below
+# only works while this is still a member of that workspace - replace it with this crate's own
+# `[lints.rust]`/`[lints.rustdoc]` tables once it's extracted.
 [lints]
 workspace = true
 
