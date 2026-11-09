@@ -18,8 +18,8 @@ use timezone_provider::experimental_tzif::ZeroCompiledTzdbProvider;
 use crate::job::Job;
 use crate::js_error;
 use crate::module::DynModuleLoader;
-use crate::vm::{CodeBlock, InterruptHandle, RuntimeLimits, create_function_object_fast};
 use crate::property::CompletePropertyDescriptor;
+use crate::vm::{CodeBlock, InterruptHandle, RuntimeLimits, create_function_object_fast};
 use crate::{
     HostDefined, JsNativeError, JsResult, JsString, JsValue, Source, builtins,
     class::{Class, ClassBuilder},
